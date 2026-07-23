@@ -37,25 +37,64 @@ title: Resultados
             {% for equipo in ["masculino", "femenino", "aficionados-b"] %}
               {% for tipo in ["resultados", "calendario", "clasificacion"] %}
               <div class="rffm-panel" data-team="{{ equipo }}" data-tipo="{{ tipo }}" style="display:{% if equipo == 'masculino' and tipo == 'resultados' %}block{% else %}none{% endif %};">
-                <div class="rffm-embed">
-                  {{ rffm[equipo][tipo] | safe }}
-                </div>
+                {% if tipo == "clasificacion" %}
+                  <!-- Clasificación: aún se muestra como venía de RFFM; pendiente de migrar a tabla propia -->
+                  <div class="rffm-embed">
+                    {{ rffm[equipo][tipo] | safe }}
+                  </div>
+                {% else %}
+                  {% set partidos = rffm[equipo][tipo] %}
+                  {% if partidos and partidos.length %}
+                  <table class="rffm-table">
+                    <thead>
+                      <tr>
+                        <th>Fecha</th>
+                        <th>Local</th>
+                        <th>Marcador</th>
+                        <th>Visitante</th>
+                        <th>Lugar</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for p in partidos %}
+                      <tr>
+                        <td>{{ p.fecha or "-" }}{% if p.hora %} <span class="rffm-hora">{{ p.hora }}h</span>{% endif %}</td>
+                        <td>{{ p.local or "-" }}</td>
+                        <td class="rffm-marcador">{{ p.golesLocal }} - {{ p.golesVisitante }}</td>
+                        <td>{{ p.visitante or "-" }}</td>
+                        <td>{{ p.lugar or "-" }}</td>
+                      </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                  {% else %}
+                  <p style="padding:20px;color:#9b9b9b;font-size:14px;">Sin datos todavía.</p>
+                  {% endif %}
+                {% endif %}
               </div>
               {% endfor %}
             {% endfor %}
           </div>
 
-          <p style="font-size:11px;color:#c9c4bc;margin-top:12px;">Contenido obtenido automáticamente de rffm.es. Si no ves datos actualizados, puede que la última actualización semanal aún no se haya ejecutado.</p>
+          <p style="font-size:11px;color:#c9c4bc;margin-top:12px;">Datos de partidos obtenidos automáticamente de rffm.es. Si no ves datos actualizados, puede que la última actualización semanal aún no se haya ejecutado.</p>
         </div>
       </section>
 
       <style>
-        /* Reset ligero para que el contenido embebido de la RFFM no rompa nuestra tipografía */
+        /* Clasificación: reset ligero mientras siga viniendo embebida de RFFM */
         .rffm-embed { font-family: 'Inter', sans-serif; font-size: 14px; color: #3a3733; padding: 16px; }
         .rffm-embed img { max-width: 100%; height: auto; }
         .rffm-embed table { width: 100%; border-collapse: collapse; font-size: 13px; }
         .rffm-embed table td, .rffm-embed table th { padding: 8px; border-bottom: 1px solid #eee; }
         .rffm-embed a { color: #D6282E; }
+
+        /* Resultados y calendario: tabla propia con estilo ADCV */
+        .rffm-table { width: 100%; border-collapse: collapse; font-family: 'Inter', sans-serif; font-size: 13px; color: #3a3733; }
+        .rffm-table thead th { text-align: left; padding: 10px 14px; background: #f7f5f2; font-family: 'Barlow Condensed', sans-serif; text-transform: uppercase; letter-spacing: .03em; font-size: 12px; color: #9b9b9b; border-bottom: 2px solid #e1e1e1; }
+        .rffm-table tbody td { padding: 10px 14px; border-bottom: 1px solid #eee; vertical-align: middle; }
+        .rffm-table tbody tr:hover { background: #fafafa; }
+        .rffm-marcador { font-weight: 700; color: #D6282E; white-space: nowrap; }
+        .rffm-hora { color: #9b9b9b; font-size: 11px; }
       </style>
 
       <script>

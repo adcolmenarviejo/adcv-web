@@ -3,9 +3,21 @@ const path = require("path");
 
 const DIR = path.join(__dirname, "rffm-snapshots");
 const EQUIPOS = ["masculino", "femenino", "aficionados-b"];
-const TIPOS = ["resultados", "calendario", "clasificacion"];
+const TIPOS_JSON = ["resultados", "calendario"];
+const TIPOS_HTML = ["clasificacion"];
 
-function leer(equipo, tipo) {
+function leerJSON(equipo, tipo) {
+  const file = path.join(DIR, `${equipo}-${tipo}.json`);
+  try {
+    const raw = fs.readFileSync(file, "utf-8");
+    const partidos = JSON.parse(raw);
+    return Array.isArray(partidos) ? partidos : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function leerHTML(equipo, tipo) {
   const file = path.join(DIR, `${equipo}-${tipo}.html`);
   try {
     return fs.readFileSync(file, "utf-8");
@@ -18,8 +30,11 @@ module.exports = function () {
   const data = {};
   for (const equipo of EQUIPOS) {
     data[equipo] = {};
-    for (const tipo of TIPOS) {
-      data[equipo][tipo] = leer(equipo, tipo);
+    for (const tipo of TIPOS_JSON) {
+      data[equipo][tipo] = leerJSON(equipo, tipo);
+    }
+    for (const tipo of TIPOS_HTML) {
+      data[equipo][tipo] = leerHTML(equipo, tipo);
     }
   }
   return data;
