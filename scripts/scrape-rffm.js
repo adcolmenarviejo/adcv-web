@@ -4,30 +4,24 @@
  * La web de la RFFM carga sus datos con JavaScript (no hay una
  * API pública), así que este script abre un navegador invisible
  * (Playwright), entra a cada página, espera a que cargue el
- * contenido real, y EXTRAE SOLO LOS DATOS de cada partido
- * (equipos, marcador, fecha, hora, lugar) a un JSON propio.
+ * contenido real, y EXTRAE SOLO LOS DATOS (resultados, calendario
+ * y clasificación) a JSON propio. Nuestra web ya no depende en
+ * nada del HTML de RFFM (ni su menú, footer o escudos rotos).
  *
- * A diferencia de la versión anterior, ya NO copiamos el HTML
- * de RFFM (eso arrastraba su menú, footer, patrocinadores, etc.
- * y escudos rotos por hotlinking). Ahora guardamos datos limpios
- * en src/_data/rffm-snapshots/<equipo>-<tipo>.json, y es la
- * plantilla de nuestra web la que pinta la tabla con el estilo
- * de ADCV.
+ * - resultados / calendario -> array de partidos:
+ *   { local, visitante, golesLocal, golesVisitante, fecha, hora, lugar }
+ * - clasificacion -> si RFFM la pinta como <table>, guardamos las
+ *   filas tal cual (con sus propias cabeceras) en
+ *   <equipo>-clasificacion.json. Si no encontramos una tabla,
+ *   caemos de vuelta al volcado de HTML de siempre (con noise de
+ *   RFFM) como respaldo, para no dejar la sección vacía.
  *
- * IMPORTANTE — primera ejecución real:
- * El script se ha escrito sin poder ver la estructura HTML real
- * de rffm.es en directo (limitación del entorno de desarrollo),
- * así que localiza los datos por PATRONES (dónde aparece un
- * marcador tipo "2 - 0", una fecha, "Lugar:", etc.) en vez de
- * por nombres de clase concretos — es más robusto, pero conviene
- * revisar el primer resultado real y ajustar si algo no encaja.
- * Si algo va mal, la web sigue funcionando con los últimos datos
- * guardados en vez de romperse.
- *
- * NOTA: la extracción de "clasificacion" (tabla de posiciones)
- * se mantiene igual que antes (captura de HTML) porque tiene una
- * estructura distinta (tabla de liga) que aún no hemos revisado.
- * Se puede migrar a JSON en un segundo paso.
+ * IMPORTANTE: se ha escrito sin poder ver la estructura HTML real
+ * de rffm.es (limitación del entorno de desarrollo), localizando
+ * los datos por PATRONES en vez de por nombres de clase concretos.
+ * Es más robusto ante cambios de diseño, pero conviene revisar el
+ * primer resultado real y ajustar si algo no encaja. Si algo va
+ * mal, la web sigue funcionando con los últimos datos guardados.
  * ---------------------------------------------------------------
  */
 
@@ -71,8 +65,7 @@ const EQUIPOS = [
   },
 ];
 
-// Selectores candidatos para el contenedor principal (solo se usan
-// para clasificación, que aún se captura como HTML de respaldo).
+// Solo se usan como respaldo de la clasificación si no se encuentra una <table>.
 const CANDIDATOS_CONTENEDOR = [
   "main",
   "#__nuxt main",
@@ -100,8 +93,11 @@ async function extraerPartidos(page) {
     const scoreRegex = /^\s*\d{1,2}\s*-\s*\d{1,2}\s*$/;
     const dateRegex = /(\d{2}\/\d{2}\/\d{4})/;
     const timeRegex = /(\d{2}:\d{2})h/;
+    // El alt de los escudos en RFFM es un texto genérico igual para todos
+    // ("Escudo equipo local" / "Escudo equipo visitante"), no el nombre
+    // real del equipo — hay que descartarlo, no usarlo como nombre.
+    const altGenericoRegex = /^escudo(\s+del?)?\s+equipo\s+(local|visitante)$/i;
 
-    // 1. Elementos "hoja" (sin hijos) cuyo texto es justo un marcador "N - N"
     const scoreEls = Array.from(document.querySelectorAll("body *")).filter(
       (el) => el.children.length === 0 && scoreRegex.test(el.textContent || "")
     );
@@ -112,7 +108,6 @@ async function extraerPartidos(page) {
       const marcador = scoreEl.textContent.trim();
       const [golesLocal, golesVisitante] = marcador.split("-").map((n) => n.trim());
 
-      // 2. Sube hasta el contenedor del partido (el que ya incluye fecha o "Lugar:")
       let row = scoreEl;
       let fila = null;
       for (let i = 0; i < 8 && row.parentElement; i++) {
@@ -122,8 +117,6 @@ async function extraerPartidos(page) {
           break;
         }
       }
-      // Si no hay fecha/lugar (p. ej. en jornadas pasadas del calendario), usamos
-      // un contenedor algo más amplio igualmente, mientras no mezcle varios partidos.
       if (!fila) {
         row = scoreEl;
         for (let i = 0; i < 4 && row.parentElement; i++) row = row.parentElement;
@@ -136,11 +129,9 @@ async function extraerPartidos(page) {
       const lugarMatch = textoFila.match(/Lugar:\s*(.+?)\s*(?:\(HA\)|VER ACTA)/i);
       const lugar = lugarMatch ? lugarMatch[1].trim() : null;
 
-      // 3. Nombres de equipo: preferimos el alt de los escudos (más fiable);
-      //    si no hay, deducimos el texto justo antes/después del marcador.
       const imgs = Array.from(fila.querySelectorAll("img[alt]"))
         .map((i) => i.alt.trim())
-        .filter(Boolean);
+        .filter((alt) => alt && !altGenericoRegex.test(alt));
 
       let local = null;
       let visitante = null;
@@ -173,7 +164,30 @@ async function extraerPartidos(page) {
   });
 }
 
-/** Extracción de respaldo (HTML) — se mantiene solo para clasificación por ahora. */
+/**
+ * Extrae la clasificación como filas de tabla (con las cabeceras que
+ * use la propia RFFM), si la pintan como <table>. Si no hay ninguna
+ * tabla reconocible, devuelve null (el llamante hará un respaldo).
+ */
+async function extraerClasificacion(page) {
+  await esperarContenido(page);
+
+  return await page.evaluate(() => {
+    const tablas = Array.from(document.querySelectorAll("table"));
+    if (!tablas.length) return null;
+
+    // Nos quedamos con la tabla que más filas tenga (la de clasificación
+    // suele ser, con diferencia, la más larga de la página).
+    const tabla = tablas.reduce((a, b) => (b.rows.length > a.rows.length ? b : a));
+    if (tabla.rows.length < 2) return null;
+
+    return Array.from(tabla.rows).map((tr) =>
+      Array.from(tr.cells).map((td) => td.textContent.replace(/\s+/g, " ").trim())
+    );
+  });
+}
+
+/** Respaldo (HTML) — solo se usa si la clasificación no viene en una <table>. */
 async function extraerContenido(page) {
   await esperarContenido(page);
 
@@ -205,19 +219,15 @@ async function main() {
   for (const equipo of EQUIPOS) {
     for (const tipo of ["resultados", "calendario", "clasificacion"]) {
       const url = equipo[tipo];
-      const esEstructurado = tipo === "resultados" || tipo === "calendario";
-      const outPath = path.join(
-        OUT_DIR,
-        `${equipo.slug}-${tipo}.${esEstructurado ? "json" : "html"}`
-      );
 
       try {
         const page = await context.newPage();
         await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
 
-        if (esEstructurado) {
+        if (tipo === "resultados" || tipo === "calendario") {
           const partidos = await extraerPartidos(page);
           await page.close();
+          const outPath = path.join(OUT_DIR, `${equipo.slug}-${tipo}.json`);
 
           if (partidos && partidos.length) {
             fs.writeFileSync(outPath, JSON.stringify(partidos, null, 2), "utf-8");
@@ -228,16 +238,29 @@ async function main() {
             console.warn(`⚠️  ${equipo.nombre} — ${tipo}: no se reconoció ningún partido; se mantiene el archivo anterior si existe`);
           }
         } else {
-          const html = await extraerContenido(page);
-          await page.close();
+          // clasificacion
+          const filas = await extraerClasificacion(page);
 
-          if (html) {
-            fs.writeFileSync(outPath, html, "utf-8");
-            log.resultados.push({ equipo: equipo.slug, tipo, ok: true, bytes: html.length });
-            console.log(`✅ ${equipo.nombre} — ${tipo}: ${html.length} caracteres guardados`);
+          if (filas) {
+            await page.close();
+            const outPath = path.join(OUT_DIR, `${equipo.slug}-clasificacion.json`);
+            fs.writeFileSync(outPath, JSON.stringify(filas, null, 2), "utf-8");
+            log.resultados.push({ equipo: equipo.slug, tipo, ok: true, formato: "tabla", filas: filas.length });
+            console.log(`✅ ${equipo.nombre} — clasificación: ${filas.length} filas guardadas (tabla)`);
           } else {
-            log.resultados.push({ equipo: equipo.slug, tipo, ok: false, motivo: "sin contenido reconocible" });
-            console.warn(`⚠️  ${equipo.nombre} — ${tipo}: no se encontró contenido; se mantiene el archivo anterior si existe`);
+            // Respaldo: si no hay tabla reconocible, volcamos el HTML como antes
+            const html = await extraerContenido(page);
+            await page.close();
+            const outPath = path.join(OUT_DIR, `${equipo.slug}-clasificacion.html`);
+
+            if (html) {
+              fs.writeFileSync(outPath, html, "utf-8");
+              log.resultados.push({ equipo: equipo.slug, tipo, ok: true, formato: "html-respaldo", bytes: html.length });
+              console.warn(`⚠️  ${equipo.nombre} — clasificación: no se encontró <table>, se guardó HTML de respaldo`);
+            } else {
+              log.resultados.push({ equipo: equipo.slug, tipo, ok: false, motivo: "sin contenido reconocible" });
+              console.warn(`⚠️  ${equipo.nombre} — clasificación: no se encontró contenido; se mantiene el archivo anterior si existe`);
+            }
           }
         }
       } catch (err) {

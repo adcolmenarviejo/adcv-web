@@ -38,10 +38,30 @@ title: Resultados
               {% for tipo in ["resultados", "calendario", "clasificacion"] %}
               <div class="rffm-panel" data-team="{{ equipo }}" data-tipo="{{ tipo }}" style="display:{% if equipo == 'masculino' and tipo == 'resultados' %}block{% else %}none{% endif %};">
                 {% if tipo == "clasificacion" %}
-                  <!-- Clasificación: aún se muestra como venía de RFFM; pendiente de migrar a tabla propia -->
+                  {% set clas = rffm[equipo][tipo] %}
+                  {% if clas.formato == "tabla" %}
+                  <table class="rffm-table">
+                    <thead>
+                      <tr>
+                        {% for celda in clas.filas[0] %}<th>{{ celda }}</th>{% endfor %}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for fila in clas.filas %}
+                        {% if not loop.first %}
+                        <tr>{% for celda in fila %}<td>{{ celda }}</td>{% endfor %}</tr>
+                        {% endif %}
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                  {% elif clas.formato == "html" %}
+                  <!-- Respaldo: aún no se ha encontrado una tabla estructurada en RFFM para esta categoría -->
                   <div class="rffm-embed">
-                    {{ rffm[equipo][tipo] | safe }}
+                    {{ clas.html | safe }}
                   </div>
+                  {% else %}
+                  <p style="padding:20px;color:#9b9b9b;font-size:14px;">Sin datos todavía.</p>
+                  {% endif %}
                 {% else %}
                   {% set partidos = rffm[equipo][tipo] %}
                   {% if partidos and partidos.length %}
@@ -81,16 +101,16 @@ title: Resultados
       </section>
 
       <style>
-        /* Clasificación: reset ligero mientras siga viniendo embebida de RFFM */
+        /* Respaldo de clasificación si no llega como tabla estructurada */
         .rffm-embed { font-family: 'Inter', sans-serif; font-size: 14px; color: #3a3733; padding: 16px; }
         .rffm-embed img { max-width: 100%; height: auto; }
         .rffm-embed table { width: 100%; border-collapse: collapse; font-size: 13px; }
         .rffm-embed table td, .rffm-embed table th { padding: 8px; border-bottom: 1px solid #eee; }
         .rffm-embed a { color: #D6282E; }
 
-        /* Resultados y calendario: tabla propia con estilo ADCV */
+        /* Resultados, calendario y clasificación: tabla propia con estilo ADCV */
         .rffm-table { width: 100%; border-collapse: collapse; font-family: 'Inter', sans-serif; font-size: 13px; color: #3a3733; }
-        .rffm-table thead th { text-align: left; padding: 10px 14px; background: #f7f5f2; font-family: 'Barlow Condensed', sans-serif; text-transform: uppercase; letter-spacing: .03em; font-size: 12px; color: #9b9b9b; border-bottom: 2px solid #e1e1e1; }
+        .rffm-table thead th { text-align: left; padding: 10px 14px; background: #f7f5f2; font-family: 'Barlow Condensed', sans-serif; text-transform: uppercase; letter-spacing: .03em; font-size: 12px; color: #9b9b9b; border-bottom: 2px solid #e1e1e1; white-space: nowrap; }
         .rffm-table tbody td { padding: 10px 14px; border-bottom: 1px solid #eee; vertical-align: middle; }
         .rffm-table tbody tr:hover { background: #fafafa; }
         .rffm-marcador { font-weight: 700; color: #D6282E; white-space: nowrap; }

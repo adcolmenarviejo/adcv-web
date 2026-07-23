@@ -3,10 +3,8 @@ const path = require("path");
 
 const DIR = path.join(__dirname, "rffm-snapshots");
 const EQUIPOS = ["masculino", "femenino", "aficionados-b"];
-const TIPOS_JSON = ["resultados", "calendario"];
-const TIPOS_HTML = ["clasificacion"];
 
-function leerJSON(equipo, tipo) {
+function leerPartidos(equipo, tipo) {
   const file = path.join(DIR, `${equipo}-${tipo}.json`);
   try {
     const raw = fs.readFileSync(file, "utf-8");
@@ -17,25 +15,37 @@ function leerJSON(equipo, tipo) {
   }
 }
 
-function leerHTML(equipo, tipo) {
-  const file = path.join(DIR, `${equipo}-${tipo}.html`);
+function leerClasificacion(equipo) {
+  const jsonFile = path.join(DIR, `${equipo}-clasificacion.json`);
   try {
-    return fs.readFileSync(file, "utf-8");
+    const raw = fs.readFileSync(jsonFile, "utf-8");
+    const filas = JSON.parse(raw);
+    if (Array.isArray(filas) && filas.length) {
+      return { formato: "tabla", filas };
+    }
   } catch (e) {
-    return '<p style="padding:20px;color:#9b9b9b;font-size:14px;">Sin datos todavía.</p>';
+    // seguimos al respaldo
   }
+
+  const htmlFile = path.join(DIR, `${equipo}-clasificacion.html`);
+  try {
+    const html = fs.readFileSync(htmlFile, "utf-8");
+    return { formato: "html", html };
+  } catch (e) {
+    // seguimos al vacío
+  }
+
+  return { formato: "vacio" };
 }
 
 module.exports = function () {
   const data = {};
   for (const equipo of EQUIPOS) {
-    data[equipo] = {};
-    for (const tipo of TIPOS_JSON) {
-      data[equipo][tipo] = leerJSON(equipo, tipo);
-    }
-    for (const tipo of TIPOS_HTML) {
-      data[equipo][tipo] = leerHTML(equipo, tipo);
-    }
+    data[equipo] = {
+      resultados: leerPartidos(equipo, "resultados"),
+      calendario: leerPartidos(equipo, "calendario"),
+      clasificacion: leerClasificacion(equipo),
+    };
   }
   return data;
 };
