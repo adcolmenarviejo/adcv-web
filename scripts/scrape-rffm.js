@@ -1,14 +1,18 @@
 /**
  * scrape-rffm.js
  * ---------------------------------------------------------------
- * Abre un navegador invisible (Playwright), entra a cada página de
- * la RFFM, espera a que cargue el contenido real, LIMPIA el ruido
- * que no queremos (aviso de cookies, buscador, avisos de interés)
- * y guarda el resto para que nuestra web lo incluya directamente.
+ * La web de la RFFM carga sus datos con JavaScript, así que este
+ * script abre un navegador invisible (Playwright), entra a cada
+ * página, espera a que cargue el contenido real, y en vez de
+ * intentar "limpiar" ruido quitando cosas una por una, busca
+ * directamente el bloque que contiene los partidos de verdad
+ * (siempre llevan el texto "VER ACTA") y se queda solo con eso.
+ * Así no se cuelan avisos, buscadores ni menús de la RFFM.
  *
- * Este archivo ya incorpora los ajustes de la primera ejecución
- * real (los textos de limpieza de abajo están sacados de lo que
- * la RFFM devolvió de verdad la primera vez que se conectó).
+ * Para Clasificación (que no tiene "VER ACTA"), se usa un método
+ * de respaldo: eliminar los bloques de ruido conocidos por su
+ * texto y quedarse con el contenedor más pequeño que aún tenga
+ * datos reales.
  * ---------------------------------------------------------------
  */
 
@@ -52,22 +56,6 @@ const EQUIPOS = [
   },
 ];
 
-// Selectores candidatos para el contenedor principal de contenido,
-// de más específico a más general.
-const CANDIDATOS_CONTENEDOR = [
-  "main",
-  "#__nuxt main",
-  "#__nuxt",
-  '[class*="resultado"]',
-  '[class*="calendario"]',
-  '[class*="clasificacion"]',
-  "#app",
-  "body",
-];
-
-// Selectores habituales de banners de cookies (OneTrust, Cookiebot,
-// Quantcast, CookieYes y variantes genéricas) — se eliminan siempre
-// que aparezcan, antes de capturar el contenido.
 const SELECTORES_RUIDO = [
   "#onetrust-banner-sdk",
   "#onetrust-consent-sdk",
@@ -79,7 +67,6 @@ const SELECTORES_RUIDO = [
   '[class*="cookie" i]',
   '[id*="consent" i]',
   '[class*="consent" i]',
-  '[class*="cmp-container" i]',
   "script",
   "style",
   "noscript",
@@ -87,69 +74,103 @@ const SELECTORES_RUIDO = [
   "button",
   "input",
   "form",
-  "nav",
-  "header",
-  "footer",
 ];
 
-// Frases exactas vistas en la primera ejecución real: si aparecen,
-// se elimina el bloque contenedor más cercano que las envuelve.
 const FRASES_RUIDO = [
   "Su privacidad es importante para nosotros",
   "¡Escribe lo que estás buscando y presiona Enter",
   "Avisos de interés",
+  "Nota informativa",
   "FILTRO DE BÚSQUEDAS",
 ];
 
-async function limpiarYExtraer(page) {
+async function limpiarRuidoBasico(page) {
+  await page.evaluate((selectores) => {
+    selectores.forEach((sel) => {
+      document.querySelectorAll(sel).forEach((n) => n.remove());
+    });
+  }, SELECTORES_RUIDO);
+}
+
+async function extraerPorMarcador(page, marcador) {
+  return await page.evaluate((marcadorTexto) => {
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    const nodos = [];
+    let n;
+    while ((n = walker.nextNode())) {
+      if (n.nodeValue && n.nodeValue.includes(marcadorTexto)) nodos.push(n);
+    }
+    if (nodos.length < 3) return null;
+
+    function ancestros(nodo) {
+      const lista = [];
+      let el = nodo.parentElement;
+      while (el) {
+        lista.push(el);
+        el = el.parentElement;
+      }
+      return lista;
+    }
+    let comunes = ancestros(nodos[0]);
+    for (let i = 1; i < nodos.length; i++) {
+      const setActual = new Set(ancestros(nodos[i]));
+      comunes = comunes.filter((el) => setActual.has(el));
+    }
+    if (!comunes.length) return null;
+    let contenedor = comunes[0];
+
+    const clone = contenedor.cloneNode(true);
+    clone.querySelectorAll("script, style, noscript, iframe, button, input, form").forEach((el) => el.remove());
+    return clone.innerHTML;
+  }, marcador);
+}
+
+async function extraerPorLimpieza(page) {
+  return await page.evaluate((frasesRuido) => {
+    function eliminarBloquePorTexto(frase) {
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      const nodos = [];
+      let n;
+      while ((n = walker.nextNode())) {
+        if (n.nodeValue && n.nodeValue.includes(frase)) nodos.push(n);
+      }
+      nodos.forEach((textNode) => {
+        let el = textNode.parentElement;
+        let saltos = 0;
+        while (el && saltos < 6) {
+          const tag = el.tagName ? el.tagName.toLowerCase() : "";
+          if (["div", "section", "aside", "form", "li", "ul"].includes(tag) && el.innerText.length < 6000) {
+            el.remove();
+            return;
+          }
+          el = el.parentElement;
+          saltos++;
+        }
+      });
+    }
+    frasesRuido.forEach(eliminarBloquePorTexto);
+
+    for (const sel of ["main", "#__nuxt main", "#__nuxt", "#app", "body"]) {
+      const el = document.querySelector(sel);
+      if (el && el.innerText && el.innerText.trim().length > 40) {
+        return el.innerHTML;
+      }
+    }
+    return null;
+  }, FRASES_RUIDO);
+}
+
+async function extraerContenido(page, tipo) {
   await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() => {});
   await page.waitForTimeout(3000);
 
-  return await page.evaluate(
-    ({ selectoresContenedor, selectoresRuido, frasesRuido }) => {
-      // 1) Quita banners de cookies y elementos que no necesitamos
-      selectoresRuido.forEach((sel) => {
-        document.querySelectorAll(sel).forEach((n) => n.remove());
-      });
+  await limpiarRuidoBasico(page);
 
-      // 2) Quita bloques que contengan alguna de las frases de ruido
-      //    conocidas (buscador, avisos, filtros de la RFFM).
-      function eliminarBloquePorTexto(frase) {
-        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-        const nodos = [];
-        let n;
-        while ((n = walker.nextNode())) {
-          if (n.nodeValue && n.nodeValue.includes(frase)) nodos.push(n);
-        }
-        nodos.forEach((textNode) => {
-          // Sube hasta encontrar un bloque razonable (div/section/aside)
-          // para eliminar el widget completo, sin borrar de más ni de menos.
-          let el = textNode.parentElement;
-          let saltos = 0;
-          while (el && saltos < 6) {
-            const tag = el.tagName ? el.tagName.toLowerCase() : "";
-            if (["div", "section", "aside", "form"].includes(tag) && el.innerText.length < 4000) {
-              el.remove();
-              return;
-            }
-            el = el.parentElement;
-            saltos++;
-          }
-        });
-      }
-      frasesRuido.forEach(eliminarBloquePorTexto);
-
-      // 3) Busca el contenedor principal ya limpio
-      for (const sel of selectoresContenedor) {
-        const el = document.querySelector(sel);
-        if (el && el.innerText && el.innerText.trim().length > 40) {
-          return el.innerHTML;
-        }
-      }
-      return null;
-    },
-    { selectoresContenedor: CANDIDATOS_CONTENEDOR, selectoresRuido: SELECTORES_RUIDO, frasesRuido: FRASES_RUIDO }
-  );
+  if (tipo === "resultados" || tipo === "calendario") {
+    const html = await extraerPorMarcador(page, "VER ACTA");
+    if (html) return html;
+  }
+  return await extraerPorLimpieza(page);
 }
 
 async function main() {
@@ -169,7 +190,7 @@ async function main() {
       try {
         const page = await context.newPage();
         await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
-        const html = await limpiarYExtraer(page);
+        const html = await extraerContenido(page, tipo);
         await page.close();
 
         if (html) {
