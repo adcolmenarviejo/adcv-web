@@ -1,0 +1,22 @@
+---
+layout: base.njk
+---
+<section class="section section-md">
+  <div class="container">
+    <div class="row justify-content-center">
+      <div class="col-lg-9">
+        <p style="margin-bottom:15px;"><a href="/actualidad/" style="font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;font-size:13px;font-weight:700;letter-spacing:.05em;color:#9b9b9b;">&larr; Volver a Actualidad</a></p>
+        <p class="text-style-1" style="color:#D6282E;">{{ category }}</p>
+        <h1 style="margin-top:10px;font-size:clamp(28px,4vw,42px);">{{ title }}</h1>
+        <p style="font-size:13px;color:#9b9b9b;margin-top:12px;">{{ date_human }}</p>
+        {% if lede %}<p style="font-size:18px;line-height:1.7;color:#5c574f;margin-top:15px;font-weight:500;">{{ lede }}</p>{% endif %}
+        {% if image %}<img src="{{ image }}" alt="" style="width:100%;border-radius:4px;margin-top:25px;">{% endif %}
+        <div class="noticia-body" style="font-size:16px;line-height:1.85;margin-top:18px;">
+          {{ content | safe }}
+        </div>
+        {% if hashtags %}<p style="font-size:13px;color:#D6282E;margin-top:25px;">{{ hashtags }}</p>{% endif %}
+      </div>
+    </div>
+  </div>
+</section>
+<style>.noticia-body p{margin-top:18px;}.noticia-body strong{color:#151515;}</style>

@@ -1,0 +1,23 @@
+name: Actualización semanal de resultados (RFFM)
+
+on:
+  schedule:
+    # Todos los lunes a las 07:00 UTC (~09:00 hora de Madrid en invierno, 08:00 en verano)
+    - cron: "0 7 * * 1"
+  workflow_dispatch: {}
+    # Esto permite lanzarlo también a mano desde la pestaña "Actions" de GitHub,
+    # sin esperar al lunes, por si algún día quieres forzar una actualización.
+
+jobs:
+  trigger-netlify-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Disparar recompilación en Netlify
+        run: |
+          if [ -z "$NETLIFY_BUILD_HOOK" ]; then
+            echo "Falta configurar el secreto NETLIFY_BUILD_HOOK en GitHub (ver SETUP.md)."
+            exit 1
+          fi
+          curl -X POST -d '{}' "$NETLIFY_BUILD_HOOK"
+        env:
+          NETLIFY_BUILD_HOOK: ${{ secrets.NETLIFY_BUILD_HOOK }}

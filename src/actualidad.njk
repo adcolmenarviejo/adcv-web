@@ -1,0 +1,97 @@
+---
+layout: base.njk
+title: Actualidad
+---
+      <section class="section bg-image-dark context-dark" style="background-image:url(images/banco-fotos/d2d780ad-ca53-4549-9958-11af7c2f9c29.jpeg); background-size:cover; background-position:center 20%; padding:90px 0;">
+        <div class="container text-center">
+          <p class="eyebrow" style="font-family:'Barlow Condensed',sans-serif; text-transform:uppercase; letter-spacing:.1em; color:#f0bcbe; font-weight:700;">Última hora</p>
+          <h1 style="color:#fff; margin-top:10px;">Actualidad</h1>
+        </div>
+      </section>
+
+      {% set noticias = collections.noticiasOrdenadas %}
+      <section class="section section-md">
+        <div class="container">
+          <div class="row row-30">
+
+            {% if noticias.length > 0 %}
+            {% set destacada = noticias[0] %}
+            <div class="col-lg-8">
+              <article style="border:1px solid #e1e1e1;border-radius:4px;overflow:hidden;">
+                <a href="{{ destacada.url }}" style="color:inherit;">
+                <img src="{{ destacada.data.image }}" alt="" style="width:100%;aspect-ratio:16/10;object-fit:cover;">
+                <div style="padding:26px;">
+                  <p class="text-style-1" style="color:#D6282E;">{{ destacada.data.category }}</p>
+                  <h3 style="margin-top:10px;">{{ destacada.data.title }}</h3>
+                  {% if destacada.data.lede %}<p style="font-size:15px;color:#9b9b9b;margin-top:10px;">{{ destacada.data.lede }}</p>{% endif %}
+                  <p style="font-size:12px;color:#9b9b9b;margin-top:10px;">{{ destacada.data.date_human }}</p>
+                </div>
+                </a>
+              </article>
+            </div>
+
+            <div class="col-lg-4">
+              <div class="row row-20">
+                {% for noticia in noticias.slice(1, 4) %}
+                <div class="col-12"{% if not loop.first %} style="margin-top:15px;"{% endif %}>
+                  <article style="border:1px solid #e1e1e1;border-radius:4px;overflow:hidden;display:flex;">
+                    <a href="{{ noticia.url }}" style="display:flex;color:inherit;">
+                    <img src="{{ noticia.data.image }}" alt="" style="width:100px;aspect-ratio:1/1;object-fit:cover;flex:none;">
+                    <div style="padding:14px;">
+                      <p class="text-style-1" style="color:#D6282E;font-size:11px;">{{ noticia.data.category }}</p>
+                      <p style="font-size:14px;font-weight:600;margin-top:4px;color:#151515;">{{ noticia.data.title }}</p>
+                      <p style="font-size:11px;color:#9b9b9b;margin-top:4px;">{{ noticia.data.date_human }}</p>
+                    </div>
+                    </a>
+                  </article>
+                </div>
+                {% endfor %}
+              </div>
+            </div>
+            {% endif %}
+
+          </div>
+
+          {% if noticias.length > 4 %}
+          <div class="row row-30" style="margin-top:10px;">
+            {% for noticia in noticias.slice(4) %}
+            <div class="col-md-6 col-lg-3">
+              <article style="border:1px solid #e1e1e1;border-radius:4px;overflow:hidden;height:100%;">
+                <a href="{{ noticia.url }}" style="color:inherit;">
+                <img src="{{ noticia.data.image }}" alt="" style="width:100%;aspect-ratio:4/3;object-fit:cover;">
+                <div style="padding:18px;">
+                  <p class="text-style-1" style="color:#D6282E;font-size:11px;">{{ noticia.data.category }}</p>
+                  <h4 style="font-size:16px;margin-top:8px;color:#151515;">{{ noticia.data.title }}</h4>
+                  <p style="font-size:11px;color:#9b9b9b;margin-top:4px;">{{ noticia.data.date_human }}</p>
+                </div>
+                </a>
+              </article>
+            </div>
+            {% endfor %}
+          </div>
+          {% endif %}
+        </div>
+      </section>
+
+      <section class="section section-md bg-gray-100">
+        <div class="container">
+          <div class="row row-30">
+            <div class="col-lg-7">
+              <div class="heading-component">
+                <div class="heading-component-inner"><h5 class="heading-component-title">Últimos vídeos</h5></div>
+              </div>
+              <div style="margin-top:20px;border-radius:4px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08);">
+                <iframe style="width:100%;aspect-ratio:16/9;border:0;display:block;" src="https://www.youtube.com/embed/videoseries?list=UUo05loAkjyq4UVAiSFJYihA" title="Últimos vídeos de A.D. Colmenar Viejo" loading="lazy" allowfullscreen></iframe>
+              </div>
+            </div>
+            <div class="col-lg-5">
+              <div class="heading-component">
+                <div class="heading-component-inner"><h5 class="heading-component-title">En directo desde X</h5></div>
+              </div>
+              <div style="margin-top:20px;max-height:520px;overflow-y:auto;border:1px solid #e1e1e1;border-radius:4px;background:#fff;">
+                <a class="twitter-timeline" data-height="520" data-theme="light" href="https://twitter.com/adcolmenarviejo?ref_src=twsrc%5Etfw">Tweets de @adcolmenarviejo</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>

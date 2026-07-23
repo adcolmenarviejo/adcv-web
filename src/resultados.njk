@@ -1,0 +1,92 @@
+---
+layout: base.njk
+title: Resultados
+---
+      <section class="section bg-image-dark context-dark" style="background-image:url(images/banco-fotos/c6b1bbf2-4643-4d05-bc75-304c292b8ce8.jpeg); background-size:cover; background-position:center; padding:90px 0;">
+        <div class="container text-center">
+          <p class="eyebrow" style="font-family:'Barlow Condensed',sans-serif; text-transform:uppercase; letter-spacing:.1em; color:#f0bcbe; font-weight:700;">Jornada a jornada</p>
+          <h1 style="color:#fff; margin-top:10px;">Resultados</h1>
+        </div>
+      </section>
+
+      <section class="section section-md">
+        <div class="container">
+          <div class="heading-component">
+            <div class="heading-component-inner">
+              <h5 class="heading-component-title">Resultados, calendario y clasificación</h5>
+              <span style="font-size:13px;color:#9b9b9b;">Datos en vivo desde la RFFM · se actualizan automáticamente cada lunes</span>
+            </div>
+          </div>
+
+          <!-- Selector de equipo -->
+          <div style="margin-top:20px;display:flex;gap:8px;flex-wrap:wrap;" id="rffm-team-tabs">
+            <button class="rffm-tab-team active" data-team="masculino" style="padding:10px 18px;border-radius:20px;border:2px solid #D6282E;background:#D6282E;color:#fff;font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;font-size:13px;cursor:pointer;">Primer Equipo Masculino</button>
+            <button class="rffm-tab-team" data-team="femenino" style="padding:10px 18px;border-radius:20px;border:2px solid #e1e1e1;background:#fff;color:#151515;font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;font-size:13px;cursor:pointer;">Primer Equipo Femenino</button>
+            <button class="rffm-tab-team" data-team="aficionados-b" style="padding:10px 18px;border-radius:20px;border:2px solid #e1e1e1;background:#fff;color:#151515;font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;font-size:13px;cursor:pointer;">Aficionados B</button>
+          </div>
+
+          <!-- Selector de tipo de dato -->
+          <div style="margin-top:14px;display:flex;gap:8px;border-bottom:2px solid #e1e1e1;">
+            <button class="rffm-tab-tipo active" data-tipo="resultados" style="padding:10px 16px;border:0;background:none;font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;font-size:13px;cursor:pointer;color:#D6282E;border-bottom:3px solid #D6282E;margin-bottom:-2px;">Resultados</button>
+            <button class="rffm-tab-tipo" data-tipo="calendario" style="padding:10px 16px;border:0;background:none;font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;font-size:13px;cursor:pointer;color:#9b9b9b;border-bottom:3px solid transparent;margin-bottom:-2px;">Calendario</button>
+            <button class="rffm-tab-tipo" data-tipo="clasificacion" style="padding:10px 16px;border:0;background:none;font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;font-size:13px;cursor:pointer;color:#9b9b9b;border-bottom:3px solid transparent;margin-bottom:-2px;">Clasificación</button>
+          </div>
+
+          <!-- Paneles de contenido (9 en total, se muestra 1 cada vez) -->
+          <div id="rffm-panels" style="margin-top:20px;border:1px solid #e1e1e1;border-radius:0 4px 4px 4px;overflow-x:auto;">
+            {% for equipo in ["masculino", "femenino", "aficionados-b"] %}
+              {% for tipo in ["resultados", "calendario", "clasificacion"] %}
+              <div class="rffm-panel" data-team="{{ equipo }}" data-tipo="{{ tipo }}" style="display:{% if equipo == 'masculino' and tipo == 'resultados' %}block{% else %}none{% endif %};">
+                <div class="rffm-embed">
+                  {{ rffm[equipo][tipo] | safe }}
+                </div>
+              </div>
+              {% endfor %}
+            {% endfor %}
+          </div>
+
+          <p style="font-size:11px;color:#c9c4bc;margin-top:12px;">Contenido obtenido automáticamente de rffm.es. Si no ves datos actualizados, puede que la última actualización semanal aún no se haya ejecutado.</p>
+        </div>
+      </section>
+
+      <style>
+        /* Reset ligero para que el contenido embebido de la RFFM no rompa nuestra tipografía */
+        .rffm-embed { font-family: 'Inter', sans-serif; font-size: 14px; color: #3a3733; padding: 16px; }
+        .rffm-embed img { max-width: 100%; height: auto; }
+        .rffm-embed table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .rffm-embed table td, .rffm-embed table th { padding: 8px; border-bottom: 1px solid #eee; }
+        .rffm-embed a { color: #D6282E; }
+      </style>
+
+      <script>
+        (function () {
+          var teamButtons = document.querySelectorAll('.rffm-tab-team');
+          var tipoButtons = document.querySelectorAll('.rffm-tab-tipo');
+          var panels = document.querySelectorAll('.rffm-panel');
+          var estado = { team: 'masculino', tipo: 'resultados' };
+
+          function actualizar() {
+            panels.forEach(function (p) {
+              p.style.display = (p.dataset.team === estado.team && p.dataset.tipo === estado.tipo) ? 'block' : 'none';
+            });
+            teamButtons.forEach(function (b) {
+              var activo = b.dataset.team === estado.team;
+              b.style.background = activo ? '#D6282E' : '#fff';
+              b.style.color = activo ? '#fff' : '#151515';
+              b.style.borderColor = activo ? '#D6282E' : '#e1e1e1';
+            });
+            tipoButtons.forEach(function (b) {
+              var activo = b.dataset.tipo === estado.tipo;
+              b.style.color = activo ? '#D6282E' : '#9b9b9b';
+              b.style.borderBottomColor = activo ? '#D6282E' : 'transparent';
+            });
+          }
+
+          teamButtons.forEach(function (b) {
+            b.addEventListener('click', function () { estado.team = b.dataset.team; actualizar(); });
+          });
+          tipoButtons.forEach(function (b) {
+            b.addEventListener('click', function () { estado.tipo = b.dataset.tipo; actualizar(); });
+          });
+        })();
+      </script>

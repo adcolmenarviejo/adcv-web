@@ -1,0 +1,45 @@
+backend:
+  name: git-gateway
+  branch: main
+
+# Esto hace que las imágenes que subas desde el panel se guarden dentro del propio proyecto
+media_folder: "src/images/noticias-subidas"
+public_folder: "/images/noticias-subidas"
+
+site_url: https://nueva.adcolmenarviejo.es
+display_url: https://nueva.adcolmenarviejo.es
+logo_url: /images/favicon-192.png
+
+locale: "es"
+
+collections:
+  - name: "noticias"
+    label: "Noticias"
+    label_singular: "Noticia"
+    folder: "src/noticias"
+    create: true
+    slug: "{{slug}}"
+    identifier_field: title
+    summary: "{{title}} — {{date_human}}"
+    sortable_fields: ["date", "title"]
+    fields:
+      - { label: "Título", name: "title", widget: "string" }
+      - label: "Categoría"
+        name: "category"
+        widget: "select"
+        options:
+          - "Club"
+          - "Club — En memoria"
+          - "Club — Comunicado oficial"
+          - "Primer equipo"
+          - "Fútbol femenino"
+          - "Cantera"
+          - "Escuela"
+          - "Liga"
+      - { label: "Fecha", name: "date", widget: "datetime", format: "YYYY-MM-DD", date_format: "YYYY-MM-DD", time_format: false }
+      - { label: "Fecha (texto para mostrar, ej. '18 junio 2026')", name: "date_human", widget: "string" }
+      - { label: "Foto principal", name: "image", widget: "image", media_library: { config: { multiple: false } } }
+      - { label: "Entradilla (resumen breve, opcional)", name: "lede", widget: "string", required: false }
+      - { label: "Texto de la noticia", name: "body", widget: "markdown" }
+      - { label: "Hashtags (opcional)", name: "hashtags", widget: "string", required: false }
+      - { label: "Plantilla", name: "layout", widget: "hidden", default: "noticia.njk" }
