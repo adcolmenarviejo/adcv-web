@@ -1,18 +1,33 @@
 /**
  * scrape-rffm.js
  * ---------------------------------------------------------------
- * La web de la RFFM carga sus datos con JavaScript, así que este
- * script abre un navegador invisible (Playwright), entra a cada
- * página, espera a que cargue el contenido real, y en vez de
- * intentar "limpiar" ruido quitando cosas una por una, busca
- * directamente el bloque que contiene los partidos de verdad
- * (siempre llevan el texto "VER ACTA") y se queda solo con eso.
- * Así no se cuelan avisos, buscadores ni menús de la RFFM.
+ * La web de la RFFM carga sus datos con JavaScript (no hay una
+ * API pública), así que este script abre un navegador invisible
+ * (Playwright), entra a cada página, espera a que cargue el
+ * contenido real, y EXTRAE SOLO LOS DATOS de cada partido
+ * (equipos, marcador, fecha, hora, lugar) a un JSON propio.
  *
- * Para Clasificación (que no tiene "VER ACTA"), se usa un método
- * de respaldo: eliminar los bloques de ruido conocidos por su
- * texto y quedarse con el contenedor más pequeño que aún tenga
- * datos reales.
+ * A diferencia de la versión anterior, ya NO copiamos el HTML
+ * de RFFM (eso arrastraba su menú, footer, patrocinadores, etc.
+ * y escudos rotos por hotlinking). Ahora guardamos datos limpios
+ * en src/_data/rffm-snapshots/<equipo>-<tipo>.json, y es la
+ * plantilla de nuestra web la que pinta la tabla con el estilo
+ * de ADCV.
+ *
+ * IMPORTANTE — primera ejecución real:
+ * El script se ha escrito sin poder ver la estructura HTML real
+ * de rffm.es en directo (limitación del entorno de desarrollo),
+ * así que localiza los datos por PATRONES (dónde aparece un
+ * marcador tipo "2 - 0", una fecha, "Lugar:", etc.) en vez de
+ * por nombres de clase concretos — es más robusto, pero conviene
+ * revisar el primer resultado real y ajustar si algo no encaja.
+ * Si algo va mal, la web sigue funcionando con los últimos datos
+ * guardados en vez de romperse.
+ *
+ * NOTA: la extracción de "clasificacion" (tabla de posiciones)
+ * se mantiene igual que antes (captura de HTML) porque tiene una
+ * estructura distinta (tabla de liga) que aún no hemos revisado.
+ * Se puede migrar a JSON en un segundo paso.
  * ---------------------------------------------------------------
  */
 
@@ -56,121 +71,125 @@ const EQUIPOS = [
   },
 ];
 
-const SELECTORES_RUIDO = [
-  "#onetrust-banner-sdk",
-  "#onetrust-consent-sdk",
-  ".onetrust-pc-dark-filter",
-  ".qc-cmp2-container",
-  "#qc-cmp2-container",
-  ".cookiebot",
-  '[id*="cookie" i]',
-  '[class*="cookie" i]',
-  '[id*="consent" i]',
-  '[class*="consent" i]',
-  "script",
-  "style",
-  "noscript",
-  "iframe",
-  "button",
-  "input",
-  "form",
+// Selectores candidatos para el contenedor principal (solo se usan
+// para clasificación, que aún se captura como HTML de respaldo).
+const CANDIDATOS_CONTENEDOR = [
+  "main",
+  "#__nuxt main",
+  "#__nuxt",
+  '[class*="resultado"]',
+  '[class*="calendario"]',
+  '[class*="clasificacion"]',
+  "#app",
+  "body",
 ];
 
-const FRASES_RUIDO = [
-  "Su privacidad es importante para nosotros",
-  "¡Escribe lo que estás buscando y presiona Enter",
-  "Avisos de interés",
-  "Nota informativa",
-  "FILTRO DE BÚSQUEDAS",
-];
-
-async function limpiarRuidoBasico(page) {
-  await page.evaluate((selectores) => {
-    selectores.forEach((sel) => {
-      document.querySelectorAll(sel).forEach((n) => n.remove());
-    });
-  }, SELECTORES_RUIDO);
+async function esperarContenido(page) {
+  await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() => {});
+  await page.waitForTimeout(3000);
 }
 
-async function extraerPorMarcador(page, marcador) {
-  return await page.evaluate((marcadorTexto) => {
-    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-    const nodos = [];
-    let n;
-    while ((n = walker.nextNode())) {
-      if (n.nodeValue && n.nodeValue.includes(marcadorTexto)) nodos.push(n);
-    }
-    if (nodos.length < 3) return null;
+/**
+ * Extrae partidos (resultados o calendario) como datos estructurados,
+ * localizándolos por patrones en vez de por clases CSS concretas.
+ */
+async function extraerPartidos(page) {
+  await esperarContenido(page);
 
-    function ancestros(nodo) {
-      const lista = [];
-      let el = nodo.parentElement;
-      while (el) {
-        lista.push(el);
-        el = el.parentElement;
-      }
-      return lista;
-    }
-    let comunes = ancestros(nodos[0]);
-    for (let i = 1; i < nodos.length; i++) {
-      const setActual = new Set(ancestros(nodos[i]));
-      comunes = comunes.filter((el) => setActual.has(el));
-    }
-    if (!comunes.length) return null;
-    let contenedor = comunes[0];
+  return await page.evaluate(() => {
+    const scoreRegex = /^\s*\d{1,2}\s*-\s*\d{1,2}\s*$/;
+    const dateRegex = /(\d{2}\/\d{2}\/\d{4})/;
+    const timeRegex = /(\d{2}:\d{2})h/;
 
-    const clone = contenedor.cloneNode(true);
-    clone.querySelectorAll("script, style, noscript, iframe, button, input, form").forEach((el) => el.remove());
-    return clone.innerHTML;
-  }, marcador);
-}
+    // 1. Elementos "hoja" (sin hijos) cuyo texto es justo un marcador "N - N"
+    const scoreEls = Array.from(document.querySelectorAll("body *")).filter(
+      (el) => el.children.length === 0 && scoreRegex.test(el.textContent || "")
+    );
 
-async function extraerPorLimpieza(page) {
-  return await page.evaluate((frasesRuido) => {
-    function eliminarBloquePorTexto(frase) {
-      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-      const nodos = [];
-      let n;
-      while ((n = walker.nextNode())) {
-        if (n.nodeValue && n.nodeValue.includes(frase)) nodos.push(n);
-      }
-      nodos.forEach((textNode) => {
-        let el = textNode.parentElement;
-        let saltos = 0;
-        while (el && saltos < 6) {
-          const tag = el.tagName ? el.tagName.toLowerCase() : "";
-          if (["div", "section", "aside", "form", "li", "ul"].includes(tag) && el.innerText.length < 6000) {
-            el.remove();
-            return;
-          }
-          el = el.parentElement;
-          saltos++;
+    const partidos = [];
+
+    for (const scoreEl of scoreEls) {
+      const marcador = scoreEl.textContent.trim();
+      const [golesLocal, golesVisitante] = marcador.split("-").map((n) => n.trim());
+
+      // 2. Sube hasta el contenedor del partido (el que ya incluye fecha o "Lugar:")
+      let row = scoreEl;
+      let fila = null;
+      for (let i = 0; i < 8 && row.parentElement; i++) {
+        row = row.parentElement;
+        if (dateRegex.test(row.textContent) || /Lugar:/i.test(row.textContent)) {
+          fila = row;
+          break;
         }
-      });
-    }
-    frasesRuido.forEach(eliminarBloquePorTexto);
+      }
+      // Si no hay fecha/lugar (p. ej. en jornadas pasadas del calendario), usamos
+      // un contenedor algo más amplio igualmente, mientras no mezcle varios partidos.
+      if (!fila) {
+        row = scoreEl;
+        for (let i = 0; i < 4 && row.parentElement; i++) row = row.parentElement;
+        fila = row;
+      }
 
-    for (const sel of ["main", "#__nuxt main", "#__nuxt", "#app", "body"]) {
+      const textoFila = fila.textContent.replace(/\s+/g, " ").trim();
+      const fecha = (textoFila.match(dateRegex) || [])[1] || null;
+      const hora = (textoFila.match(timeRegex) || [])[1] || null;
+      const lugarMatch = textoFila.match(/Lugar:\s*(.+?)\s*(?:\(HA\)|VER ACTA)/i);
+      const lugar = lugarMatch ? lugarMatch[1].trim() : null;
+
+      // 3. Nombres de equipo: preferimos el alt de los escudos (más fiable);
+      //    si no hay, deducimos el texto justo antes/después del marcador.
+      const imgs = Array.from(fila.querySelectorAll("img[alt]"))
+        .map((i) => i.alt.trim())
+        .filter(Boolean);
+
+      let local = null;
+      let visitante = null;
+
+      if (imgs.length >= 2) {
+        local = imgs[0];
+        visitante = imgs[1];
+      } else {
+        const idx = textoFila.indexOf(marcador);
+        if (idx > -1) {
+          const antes = textoFila.slice(0, idx).trim();
+          const despues = textoFila.slice(idx + marcador.length).trim();
+          local = antes || null;
+          visitante =
+            despues
+              .split(/Lugar:|VER ACTA/i)[0]
+              .replace(dateRegex, "")
+              .replace(timeRegex, "")
+              .replace(/h\s*$/, "")
+              .trim() || null;
+        }
+      }
+
+      if (local || visitante) {
+        partidos.push({ local, visitante, golesLocal, golesVisitante, fecha, hora, lugar });
+      }
+    }
+
+    return partidos;
+  });
+}
+
+/** Extracción de respaldo (HTML) — se mantiene solo para clasificación por ahora. */
+async function extraerContenido(page) {
+  await esperarContenido(page);
+
+  return await page.evaluate((selectores) => {
+    for (const sel of selectores) {
       const el = document.querySelector(sel);
       if (el && el.innerText && el.innerText.trim().length > 40) {
-        return el.innerHTML;
+        const clone = el.cloneNode(true);
+        clone
+          .querySelectorAll("script, style, noscript, iframe, button, input, form, nav, header, footer")
+          .forEach((n) => n.remove());
+        return clone.innerHTML;
       }
     }
     return null;
-  }, FRASES_RUIDO);
-}
-
-async function extraerContenido(page, tipo) {
-  await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() => {});
-  await page.waitForTimeout(3000);
-
-  await limpiarRuidoBasico(page);
-
-  if (tipo === "resultados" || tipo === "calendario") {
-    const html = await extraerPorMarcador(page, "VER ACTA");
-    if (html) return html;
-  }
-  return await extraerPorLimpieza(page);
+  }, CANDIDATOS_CONTENEDOR);
 }
 
 async function main() {
@@ -186,20 +205,40 @@ async function main() {
   for (const equipo of EQUIPOS) {
     for (const tipo of ["resultados", "calendario", "clasificacion"]) {
       const url = equipo[tipo];
-      const outPath = path.join(OUT_DIR, `${equipo.slug}-${tipo}.html`);
+      const esEstructurado = tipo === "resultados" || tipo === "calendario";
+      const outPath = path.join(
+        OUT_DIR,
+        `${equipo.slug}-${tipo}.${esEstructurado ? "json" : "html"}`
+      );
+
       try {
         const page = await context.newPage();
         await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
-        const html = await extraerContenido(page, tipo);
-        await page.close();
 
-        if (html) {
-          fs.writeFileSync(outPath, html, "utf-8");
-          log.resultados.push({ equipo: equipo.slug, tipo, ok: true, bytes: html.length });
-          console.log(`✅ ${equipo.nombre} — ${tipo}: ${html.length} caracteres guardados`);
+        if (esEstructurado) {
+          const partidos = await extraerPartidos(page);
+          await page.close();
+
+          if (partidos && partidos.length) {
+            fs.writeFileSync(outPath, JSON.stringify(partidos, null, 2), "utf-8");
+            log.resultados.push({ equipo: equipo.slug, tipo, ok: true, partidos: partidos.length });
+            console.log(`✅ ${equipo.nombre} — ${tipo}: ${partidos.length} partidos guardados`);
+          } else {
+            log.resultados.push({ equipo: equipo.slug, tipo, ok: false, motivo: "sin partidos reconocidos" });
+            console.warn(`⚠️  ${equipo.nombre} — ${tipo}: no se reconoció ningún partido; se mantiene el archivo anterior si existe`);
+          }
         } else {
-          log.resultados.push({ equipo: equipo.slug, tipo, ok: false, motivo: "sin contenido reconocible" });
-          console.warn(`⚠️  ${equipo.nombre} — ${tipo}: no se encontró contenido; se mantiene el archivo anterior si existe`);
+          const html = await extraerContenido(page);
+          await page.close();
+
+          if (html) {
+            fs.writeFileSync(outPath, html, "utf-8");
+            log.resultados.push({ equipo: equipo.slug, tipo, ok: true, bytes: html.length });
+            console.log(`✅ ${equipo.nombre} — ${tipo}: ${html.length} caracteres guardados`);
+          } else {
+            log.resultados.push({ equipo: equipo.slug, tipo, ok: false, motivo: "sin contenido reconocible" });
+            console.warn(`⚠️  ${equipo.nombre} — ${tipo}: no se encontró contenido; se mantiene el archivo anterior si existe`);
+          }
         }
       } catch (err) {
         log.resultados.push({ equipo: equipo.slug, tipo, ok: false, motivo: String(err && err.message ? err.message : err) });
